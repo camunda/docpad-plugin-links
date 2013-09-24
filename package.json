@@ -1,6 +1,5 @@
 {
   "name": "docpad-plugin-links",
-  # must be 2.8.x due to some docpad ***
   "version": "2.8.0", 
   "description": "Adds support for late bound links to DocPad",
   "homepage": "https://github.com/nikku/docpad-plugin-links",
