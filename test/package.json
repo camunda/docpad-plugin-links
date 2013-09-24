@@ -1,0 +1,9 @@
+{
+	"name": "docpad-plugin-links-testsite",
+	"version": "0.0.1",
+	"private": true,
+	"dependencies": {
+    "docpad-plugin-eco": "latest",
+    "docpad-plugin-marked": "latest"
+	}
+}

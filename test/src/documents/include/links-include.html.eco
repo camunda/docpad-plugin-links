@@ -1,0 +1,7 @@
+---
+title: 'Link Test'
+---
+
+<%- @include('./sub/included-html') %>
+
+<%- @include('./sub/included-eco') %>

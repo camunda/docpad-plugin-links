@@ -1,0 +1,5 @@
+---
+title: 'Included eco Link Test'
+---
+
+<a href="ref:/nested/bar.html"><%= 'A eco link' %></a>
