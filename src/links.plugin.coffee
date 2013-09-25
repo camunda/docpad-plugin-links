@@ -6,7 +6,6 @@ module.exports = (BasePlugin) ->
     info: console.log
     warn: console.log
 
-  # console.log
 
   # -------------------------
   # requires
@@ -31,10 +30,6 @@ module.exports = (BasePlugin) ->
 
 
   getTime = -> new Date().getTime()
-
-
-  linkDefinedTwice = (link, fullLink) ->
-    throw new Error('Link defined twice: <' + link + '> (' + fullLink + ')')
 
 
   compactUrl = (url) ->
@@ -105,6 +100,7 @@ module.exports = (BasePlugin) ->
     config:
       validateLinks: true # (true|false|'report') check defined and referenced links
       processLayoutedOnly: false # (true|false) process only documents piped through a layout
+      processFlaggedOnly: false # (false|string) false to process all, a string to process all documents for which the so named meta-data property is present
 
 
     # -----------------------------
@@ -115,6 +111,10 @@ module.exports = (BasePlugin) ->
       # Prepare
       super
      
+      config = @getConfig()
+
+      throw 'Configuration property processFlaggedOnly must be false|string' if config.processFlaggedOnly == true
+
       @clear()
 
 
@@ -127,13 +127,19 @@ module.exports = (BasePlugin) ->
     addLink: (link, documentUrl, document) ->
       log.debug 'add link', link, documentUrl
 
+      config = @getConfig()
       fullLink = link
 
       switch link.charAt(0)
         when '?', '#'
           fullLink = documentUrl + link
 
-      throw linkDefinedTwice(link, fullLink) if @links[fullLink]
+      if @links[fullLink]
+        msg = 'Link defined twice: <' + link + '> (' + fullLink + ')'
+        if config.validateLinks != 'report'
+          throw new Error(msg)
+        else
+          log.warn msg
 
       @links[fullLink] = 
         link: link
@@ -207,7 +213,12 @@ module.exports = (BasePlugin) ->
 
       # render only documents that have been piped through a layout
       # (saves performance)
-      if (config.parseLayoutedOnly && content == contentWithoutLayout)
+      if config.parseLayoutedOnly && content == contentWithoutLayout
+        log.debug 'Skipping document (parseLayoutedOnly)'
+        return complete()
+
+      if config.processFlaggedOnly && !document.meta.get(config.processFlaggedOnly)
+        log.debug 'Skipping document (processFlaggedOnly)'
         return complete()
 
       html = !!content.match(/.*<\/html>\s*$/)
@@ -244,11 +255,11 @@ module.exports = (BasePlugin) ->
 
       
       resolveLinkRefs = ($) ->
-        $('a[href]').each ->
+        $('a').each ->
           a = $(this)
           href = a.attr('href')
 
-          return if href.indexOf(REF_STR) != 0
+          return if !href || href.indexOf(REF_STR) != 0
 
           originalHref = href = href.substring(REF_STR.length)
           
