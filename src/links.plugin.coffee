@@ -1,12 +1,6 @@
 # links plugin for Docpad
 module.exports = (BasePlugin) ->
 
-  log = 
-    debug: (->) # console.log
-    info: console.log
-    warn: console.log
-
-
   # -------------------------
   # requires
   jsdom = require('jsdom')
@@ -14,8 +8,28 @@ module.exports = (BasePlugin) ->
 
   {Task,TaskGroup} = require('taskgroup')
 
+  # -------------------------
+  # regex cache
+  REGEX_DIR_UP_CONSUME = /[^\.\/]+\/\.\.\//
+  REGEX_DIR_UP = /\.\.\//
+  REGEX_DIR_CURRENT_ALL = /\.\//g
+  REGEX_NON_WORD_ALL = /[^\w-]/g
+  REGEX_SPACES_ALL = /[\s]+/g
+  REGEX_HTTP_S = /^http(s)?:\/\//
+  REGEX_HTML_DOC = /.*<\/html>\s*$/
+
+  # -------------------------
+  # log utility
+  log = 
+    debug: (->) # console.log
+    performance: console.log
+    info: console.log
+    warn: console.log
+
   # --------------------------
-  # extension libraries
+  # utility functions
+  # --------------------------
+
   docToSource = (document, html) ->
     if html
       (document.doctype || '').toString() + document.innerHTML
@@ -24,9 +38,17 @@ module.exports = (BasePlugin) ->
 
 
   linkify = (str) ->
-    str.toLowerCase()
-       .replace(/[\s]+/g, '-')
-       .replace(/[^\w-]/g, '')
+    str.trim()
+       .replace(REGEX_SPACES_ALL, '-')
+       .replace(REGEX_NON_WORD_ALL, '')
+       .toLowerCase()
+
+
+  endsWith = (str, searchString, position) ->
+    position = position || str.length
+    position = position - searchString.length
+    lastIndex = str.lastIndexOf(searchString)
+    return lastIndex != -1 && lastIndex == position
 
 
   getTime = -> new Date().getTime()
@@ -36,17 +58,17 @@ module.exports = (BasePlugin) ->
     newUrl
 
     while true
-      newUrl = url.replace(/[^\.\/]+\/\.\.\//, '')
+      newUrl = url.replace(REGEX_DIR_UP_CONSUME, '')
       # apply ../ consumption only if no parents are given 
       # (the ../../../../foo -> /foo case)
-      newUrl = url.replace(/\.\.\//, '') if newUrl == url
+      newUrl = url.replace(REGEX_DIR_UP, '') if newUrl == url
 
       break if newUrl == url
 
       url = newUrl
 
     # finally replace redundant ./
-    newUrl.replace(/\.\//g, '')
+    newUrl.replace(REGEX_DIR_CURRENT_ALL, '')
 
 
   # console.log('/a/b/.././', compactUrl('/a/b/.././'))
@@ -73,14 +95,15 @@ module.exports = (BasePlugin) ->
 
     separator.join('')
 
+
   getDocumentUrl = (document) ->
     urls = document.get('urls')
     url = document.get('url')
 
     urls.forEach (u) ->
-      if u.match(/\.html$/)
-        if u.match(/\/index.html$/)
-          url = u.replace('index.html', '')
+      if endsWith(u, '.html')
+        if endsWith(u, '/index.html')
+          url = u.substring(0, u.length - 'index.html'.length)
         else
           url = u
 
@@ -115,7 +138,24 @@ module.exports = (BasePlugin) ->
 
       throw 'Configuration property processFlaggedOnly must be false|string' if config.processFlaggedOnly == true
 
+      @createDomEnv()
       @clear()
+
+
+    createDomEnv: ->
+
+      log.debug 'Creating dom env...'
+
+      document = jsdom.jsdom('<html><head></head><body></body></html>')
+      window   = document.createWindow()
+      jquery = jquery.create(window)
+
+      log.debug 'Done.'
+
+      @domenv = 
+        document: document 
+        window: window
+        jquery: jquery
 
 
     clear: ->
@@ -160,7 +200,7 @@ module.exports = (BasePlugin) ->
         when '?' then
         else
           # concat ref for relative links (not for http:// or https://)
-          fullRef = compactUrl(level(documentUrl) + ref) unless ref.match(/^http(s)?:\/\//)
+          fullRef = compactUrl(level(documentUrl) + ref) unless ref.match(REGEX_HTTP_S)
 
       reference = 
         ref: ref
@@ -198,6 +238,7 @@ module.exports = (BasePlugin) ->
     processDocument: (document, complete) ->
 
       config = @getConfig()
+      domenv = @domenv
 
       url = getDocumentUrl(document)
       pathSeparator = createPathSeparator(url)
@@ -206,6 +247,8 @@ module.exports = (BasePlugin) ->
       contentWithoutLayout = document.get('contentRenderedWithoutLayout')
 
       extension = document.get('outExtension')
+
+      time = getTime()
 
       log.debug 'Processing', url, pathSeparator, extension
 
@@ -221,12 +264,17 @@ module.exports = (BasePlugin) ->
         log.debug 'Skipping document (processFlaggedOnly)'
         return complete()
 
-      html = !!content.match(/.*<\/html>\s*$/)
+      html = !!content.match(REGEX_HTML_DOC)
 
       registry = @
 
       registry.addLink(url, url, document) if config.validateLinks
 
+
+      # -------------
+      # inner functions
+      # -------------
+      
       createHeadingRefs = ($) ->
         $('h1, h2, h3, h4').each ->
           e = $(this)
@@ -274,34 +322,45 @@ module.exports = (BasePlugin) ->
           # log reference
           registry.addReference(originalHref, url, document) if config.validateLinks
 
-      jsdom.env
-        html: content
-        done: (err, window) -> 
-          
-          log.warn 'error parsing HTML', err if err
 
-          complete(err) if err
+      parse = (err, domenv) -> 
+        
+        t2 = getTime()
 
-          $ = jquery.create(window);
+        log.warn 'error parsing HTML', err if err
 
-          createHeadingRefs($)
-          resolveLinkRefs($)
+        complete(err) if err
 
-          content = docToSource(window.document, html)
+        createHeadingRefs(domenv.jquery)
+        resolveLinkRefs(domenv.jquery)
 
-          log.debug 'processed document contents'
-          log.debug content
-          log.debug '\n\n'
+        content = docToSource(domenv.document, html)
 
-          document.set({
-            contentRendered: content
-          });
-          
-          log.debug content
-          log.debug '\n\n'
-          
-          complete()
+        log.debug 'processed document contents'
+        log.debug content
+        log.debug '\n\n'
 
+        document.set({
+          contentRendered: content
+        });
+        
+        log.debug content
+        log.debug '\n\n'
+
+        t3 = getTime()
+
+        log.performance 'time', (t2 - t1), (t3 - t2), url
+        
+        complete()
+
+      t1 = getTime()
+
+      if html
+        domenv.document.innerHTML = content
+      else
+        domenv.document.innerHTML = '<html><head></head><body>' + content + '</body></html>'
+
+      parse(null, domenv)
 
     # -----------------------------
     # Events
@@ -336,6 +395,6 @@ module.exports = (BasePlugin) ->
       @clear()
 
 
-  REF_STR = "ref:"
+  REF_STR = 'ref:'
 
   return LinkPlugin
