@@ -2,7 +2,7 @@
   "name": "docpad-plugin-links",
   "version": "2.8.0", 
   "description": "Adds support for late bound links to DocPad",
-  "homepage": "https://github.com/nikku/docpad-plugin-links",
+  "homepage": "https://github.com/camunda/docpad-plugin-links",
   "keywords": [
     "docpad",
     "docpad-plugin",
@@ -11,7 +11,7 @@
     "templating",
     "template"
   ],
-  "author": "Nico Rehwaldt <git_nikku@nixis.de> (https://github.com/nikku)",
+  "author": "camunda services GmbH <info@camunda.com> (https://github.com/camunda)",
   "maintainers": [
     "Nico Rehwaldt <git_nikku@nixis.de> (https://github.com/nikku)"
   ],
@@ -19,11 +19,11 @@
     "Nico Rehwaldt <git_nikku@nixis.de> (https://github.com/nikku)"
   ],
   "bugs": {
-    "url": "https://github.com/nikku/docpad-plugin-links/issues"
+    "url": "https://github.com/camunda/docpad-plugin-links/issues"
   },
   "repository": {
     "type": "git",
-    "url": "http://github.com/nikku/docpad-plugin-links.git"
+    "url": "http://github.com/camunda/docpad-plugin-links.git"
   },
   "engines": {
     "node": ">=0.4"
