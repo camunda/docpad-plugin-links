@@ -21,8 +21,8 @@ module.exports = (BasePlugin) ->
   # -------------------------
   # log utility
   log = 
-    debug: (->) # console.log
-    performance: console.log
+    debug: (->)
+    performance: (->)
     info: console.log
     warn: console.log
 
@@ -124,6 +124,7 @@ module.exports = (BasePlugin) ->
       validateLinks: true # (true|false|'report') check defined and referenced links
       processLayoutedOnly: false # (true|false) process only documents piped through a layout
       processFlaggedOnly: false # (false|string) false to process all, a string to process all documents for which the so named meta-data property is present
+      logLevel: 'default'
 
 
     # -----------------------------
@@ -137,6 +138,15 @@ module.exports = (BasePlugin) ->
       config = @getConfig()
 
       throw 'Configuration property processFlaggedOnly must be false|string' if config.processFlaggedOnly == true
+
+      console.log(config.logLevel)
+
+      log.debug = console.log if config.logLevel == 'debug' || config.logLevel == 'performance'
+      log.performance = console.log if config.logLevel == 'performance'
+
+      if config.logLevel == 'none'
+        log.warn = (->)
+        log.info = (->)
 
       @createDomEnv()
       @clear()

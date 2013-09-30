@@ -12,5 +12,8 @@ module.exports = (testers) ->
       logLevel: 5
       renderPasses: 2
       enabledPlugins:
-        'eco' : true
-        'marked' : true
+        'eco': true
+        'marked': true
+      plugins:
+        links: 
+          logLevel: 'debug'
