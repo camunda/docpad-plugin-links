@@ -1,6 +1,6 @@
 {
   "name": "docpad-plugin-links",
-  "version": "2.8.0", 
+  "version": "2.8.1", 
   "description": "Adds support for late bound links to DocPad",
   "homepage": "https://github.com/camunda/docpad-plugin-links",
   "keywords": [
