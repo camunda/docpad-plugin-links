@@ -318,9 +318,18 @@ module.exports = (BasePlugin) ->
           href = a.attr('href')
 
           return if !href || href.indexOf(REF_STR) != 0
-
-          originalHref = href = href.substring(REF_STR.length)
           
+          # remove :ref part
+          href = href.substring(REF_STR.length)
+          
+          # remove :asset part
+          if href.indexOf(ASSET_STR) == 0
+            asset = true
+            href = href.substring(ASSET_STR.length)
+          
+          # remember original href
+          originalHref = href
+
           # handle absolute link
           if href.charAt(0) == '/'
             href = pathSeparator + href.substring(1)
@@ -330,8 +339,25 @@ module.exports = (BasePlugin) ->
           a.attr('href', href)
 
           # log reference
-          registry.addReference(originalHref, url, document) if config.validateLinks
+          registry.addReference(originalHref, url, document) if config.validateLinks && !asset
 
+      resolveImgSrcRefs = ($) ->
+        $('img').each ->
+          img = $(this)
+          src = img.attr('src')
+
+          return if !src || src.indexOf(ASSET_REF_STR) != 0
+
+          # remove :ref:asset part
+          originalSrc = src = src.substring(ASSET_REF_STR.length)
+          
+          # handle absolute link
+          if src.charAt(0) == '/'
+            src = pathSeparator + src.substring(1)
+
+          log.debug 'replace <', img.attr('src'), '> with <', src, '>'
+
+          img.attr('src', src)
 
       parse = (err, domenv) -> 
         
@@ -343,6 +369,7 @@ module.exports = (BasePlugin) ->
 
         createHeadingRefs(domenv.jquery)
         resolveLinkRefs(domenv.jquery)
+        resolveImgSrcRefs(domenv.jquery)
 
         content = docToSource(domenv.document, html)
 
@@ -406,5 +433,7 @@ module.exports = (BasePlugin) ->
 
 
   REF_STR = 'ref:'
+  ASSET_STR = 'asset:'
+  ASSET_REF_STR = 'ref:asset:'
 
   return LinkPlugin
