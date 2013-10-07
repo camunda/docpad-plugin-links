@@ -34,7 +34,7 @@ The following configuration options are supported by the plugin:
 
 ## Usage Details
 
-This gives some details on the functionalit provided by the plugin.
+This gives some details on the functionality provided by the plugin.
 
 ### Link Expansion
 
