@@ -1,0 +1,16 @@
+---
+
+title: 'Nested with sections include'
+
+---
+
+<section id="foo">
+<%- @include './include/sections-part' %>
+</section>
+
+<section id="bar">
+<%- @include './include/sections-part' %>
+</section>
+
+<a href="ref:#foo-h1-heading">foo h1 link</a>
+<a href="ref:#bar-h1-heading">bar h1 link</a>

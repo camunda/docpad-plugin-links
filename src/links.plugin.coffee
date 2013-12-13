@@ -3,8 +3,7 @@ module.exports = (BasePlugin) ->
 
   # -------------------------
   # requires
-  jsdom = require('jsdom')
-  jquery = require('jquery');
+  htmlparser = require('htmlparser2');
 
   {Task,TaskGroup} = require('taskgroup')
 
@@ -13,7 +12,7 @@ module.exports = (BasePlugin) ->
   REGEX_DIR_UP_CONSUME = /[^\.\/]+\/\.\.\//
   REGEX_DIR_UP = /\.\.\//
   REGEX_DIR_CURRENT_ALL = /\.\//g
-  REGEX_NON_WORD_ALL = /[^\w-]/g
+  REGEX_NON_WORD_ALL = /[^\w-]+/g
   REGEX_SPACES_ALL = /[\s]+/g
   REGEX_HTTP_S = /^http(s)?:\/\//
   REGEX_HTML_DOC = /.*<\/html>\s*$/
@@ -22,6 +21,7 @@ module.exports = (BasePlugin) ->
   # log utility
   log = 
     debug: (->)
+    fine: (->)
     performance: (->)
     info: console.log
     warn: console.log
@@ -71,11 +71,6 @@ module.exports = (BasePlugin) ->
     newUrl.replace(REGEX_DIR_CURRENT_ALL, '')
 
 
-  # console.log('/a/b/.././', compactUrl('/a/b/.././'))
-  # console.log('/a/b/.././foo.html', compactUrl('/a/b/.././foo.html'))
-  # console.log('/a/b/../../../', compactUrl('/a/b/../../../'))
-  # console.log('/nested/./', compactUrl('/nested/./'))
-
   level = (url) ->
     idx = url.lastIndexOf('/')
 
@@ -122,10 +117,14 @@ module.exports = (BasePlugin) ->
     # default configuration
     config:
       validateLinks: true # (true|false|'report') check defined and referenced links
-      processLayoutedOnly: false # (true|false) process only documents piped through a layout
-      processFlaggedOnly: false # (false|string) false to process all, a string to process all documents for which the so named meta-data property is present
+      forceGenerateRefs: true # true if id refs for headings should be re-generated
+      process: 'all' # (false|string) false to process all, a string to process all documents for which the so named meta-data property is present
       logLevel: 'default'
 
+    ##
+    # process: 'all'
+    # process: 'layouted'
+    # process: { include: [ 'performance' ], exclude: [ 'foo' ] }
 
     # -----------------------------
     # initialize
@@ -137,45 +136,63 @@ module.exports = (BasePlugin) ->
      
       config = @getConfig()
 
-      throw 'Configuration property processFlaggedOnly must be false|string' if config.processFlaggedOnly == true
-
-      console.log(config.logLevel)
-
-      log.debug = console.log if config.logLevel == 'debug' || config.logLevel == 'performance'
+      log.debug = console.log if config.logLevel == 'debug'
+      log.fine = console.log if config.logLevel == 'performance' || config.logLevel == 'fine' || config.logLevel == 'debug'
       log.performance = console.log if config.logLevel == 'performance'
 
       if config.logLevel == 'none'
         log.warn = (->)
         log.info = (->)
 
-      @createDomEnv()
+      processingFilter = config.process
+
+      isHtmlFile = (document) -> document.get('outExtension') == 'html' && !!document.get('contentRendered')
+
+      isLayouted = (document) -> 
+        document.get('contentRendered') != document.get('contentRenderedWithoutLayout')
+
+      matchesFlagged = (filter) ->
+        (document) ->
+          match = true
+
+          if filter.include
+            includedMatch = (true for tag in filter.include when document.meta.get(tag))
+            match = match && includedMatch.length > 0
+
+          if filter.exclude
+            excludedMatch = (true for tag in filter.exclude when !!document.meta.get(tag))
+            match = match && excludedMatch.length == 0
+
+          match
+
+      log.fine '[docpad-plugin-links] filter', processingFilter
+
+      if processingFilter == 'all'
+        @applyTo = (document) -> 
+          isHtmlFile(document)
+
+      else if processingFilter == 'layouted'
+        @applyTo = (document) -> 
+          isHtmlFile(document) && isLayouted(document)
+
+      else if typeof processingFilter == 'object'
+        isFlagged = matchesFlagged(processingFilter)
+
+        @applyTo = (document) -> 
+          isHtmlFile(document) && isFlagged(document)
+      else
+        throw new Error('[docpad-plugin-links] config.process must be any of "all", "layouted", { include: [ ... ], exclude: [ ... ]}')
+
       @clear()
 
 
-    createDomEnv: ->
-
-      log.debug 'Creating dom env...'
-
-      document = jsdom.jsdom('<html><head></head><body></body></html>')
-      window   = document.createWindow()
-      jquery = jquery.create(window)
-
-      log.debug 'Done.'
-
-      @domenv = 
-        document: document 
-        window: window
-        jquery: jquery
-
-
     clear: ->
-
       @links = {}
       @references = []
 
 
     addLink: (link, documentUrl, document) ->
-      log.debug 'add link', link, documentUrl
+      log.debug '  > add link', link
 
       config = @getConfig()
       fullLink = link
@@ -187,7 +204,7 @@ module.exports = (BasePlugin) ->
       if @links[fullLink]
         msg = 'Link defined twice: <' + link + '> (' + fullLink + ')'
         if config.validateLinks != 'report'
-          throw new Error(msg)
+          throw new Error('[docpad-plugin-links] ' + msg)
         else
           log.warn msg
 
@@ -199,7 +216,7 @@ module.exports = (BasePlugin) ->
 
 
     addReference: (ref, documentUrl, document) ->
-      log.debug 'add ref', ref, documentUrl
+      log.fine '  > add ref', ref
 
       fullRef = ref
 
@@ -228,96 +245,148 @@ module.exports = (BasePlugin) ->
 
       total = notFound = found = 0
 
-      log.info 'Validating links...'
+      log.info '[docpad-plugin-links] validating links'
 
       references.forEach (e) ->
         if links[e.fullRef]
           found++
         else
           notFound++
-          log.warn 'Dead link in ', e.documentUrl, ':', e.ref, '(', e.fullRef, ')'
+          log.warn '  > dead link in ', e.documentUrl, ':', e.ref, '(', e.fullRef, ')'
 
         total++
 
-      log.info 'Finished.'
       log.info '-- total:', total, 'found:', found, 'dead:', notFound
 
       throw new Error('Found dead links (see log).') if notFound && mode != 'report'
 
 
     processDocument: (document, complete) ->
-
       config = @getConfig()
-      domenv = @domenv
 
       url = getDocumentUrl(document)
       pathSeparator = createPathSeparator(url)
 
       content = document.get('contentRendered')
-      contentWithoutLayout = document.get('contentRenderedWithoutLayout')
-
-      extension = document.get('outExtension')
 
       time = getTime()
 
-      log.debug 'Processing', url, pathSeparator, extension
-
-      return complete() if extension != 'html' || !content
-
-      # render only documents that have been piped through a layout
-      # (saves performance)
-      if config.parseLayoutedOnly && content == contentWithoutLayout
-        log.debug 'Skipping document (parseLayoutedOnly)'
+      unless @applyTo(document)
+        log.fine '[docpad-plugin-links] skipping', url
         return complete()
 
-      if config.processFlaggedOnly && !document.meta.get(config.processFlaggedOnly)
-        log.debug 'Skipping document (processFlaggedOnly)'
-        return complete()
-
-      html = !!content.match(REGEX_HTML_DOC)
-
+      log.fine '[docpad-plugin-links] processing', url
       registry = @
 
       registry.addLink(url, url, document) if config.validateLinks
 
 
-      # -------------
-      # inner functions
-      # -------------
-      
-      createHeadingRefs = ($) ->
-        $('h1, h2, h3, h4').each ->
-          e = $(this)
-          id = e.attr('id')
+      ##
+      # Create a heading reference based on heading text and the parent sections
+      # 
+      createHeadingRef = (sections, headingText) ->
 
-          # do not re-assign ids
-          unless id
+        parts = (linkify(section.id) for section in sections when section.id)
+        parts.push(linkify(headingText))
 
-            sections = e.parents('section')
+        parts.join('-')
 
-            id = linkify(e.text())
-            sections.each -> 
-              section = $(this)
-              sectionId = section.attr('id')
 
-              # no sectionId -> break
-              return unless sectionId
-
-              id = linkify(sectionId) + '-' + id;
-
-            log.debug 'assign id <', id, '> to heading <', e.text(), '>'
-            e.attr('id', id)
-
-          # log link
-          registry.addLink('#' + id, url, document) if config.validateLinks
+      ##
+      # Create patch for parser state
+      #
+      createPatch = (parser, patchAttrs, selfClosing) ->
+        { position: getMatchPosition(parser), tagname: parser._tagname, attrs: patchAttrs, selfClosing: !!selfClosing }
 
       
-      resolveLinkRefs = ($) ->
-        $('a').each ->
-          a = $(this)
-          href = a.attr('href')
+      ##
+      # Create a string for a html tag
+      #
+      tagStr = (tagname, attrs, selfClosing) ->
+        str = '<' + tagname;
+        str += ' ' + ((key + '="' + value + '"') for key, value of attrs).join(' ')
+        str += ' /' if selfClosing
+        str += '>'
 
-          return if !href || href.indexOf(REF_STR) != 0
+        str
+
+
+      ##
+      # Apply the given patch on the target string
+      #
+      applyPatch = (str, patch) ->
+        replacement = tagStr(patch.tagname, patch.attrs, patch.selfClosing)
+
+        str.substring(0, patch.position.start) + replacement + str.substring(patch.position.end + 1)
+
+
+      ##
+      # Return the match position based on the parsers internal state
+      #
+      getMatchPosition = (parser) ->
+        start = parser.startIndex
+        start = 0 if start == 1
+
+        end = parser.endIndex
+
+        { start: start, end: end }
+
+      patches = []
+      sections = []
+
+      heading = null
+
+
+      ##
+      # Collects heading text and refs, 
+      # patches the heading id unless already present
+      # creates new heading ref from (parent sections, heading text) unless present
+      # 
+      headingsHandler = 
+        open: (attrs, parser, tagname) ->
+          if attrs.id && !config.forceGenerateRefs
+            registry.addLink('#' + attrs.id, url, document) if config.validateLinks
+          else
+            heading = createPatch(parser, attrs)
+            heading.text = ''
+
+            # add to patched element list
+            patches.push(heading)
+
+        close: (parser) ->
+          return unless heading
+
+          ref = createHeadingRef(sections, heading.text)
+          heading.attrs['id'] = ref
+
+          registry.addLink('#' + ref, url, document) if config.validateLinks
+
+          heading = null
+
+        text: (text, parser) ->
+          return unless heading
+          heading.text += text
+
+
+      ##
+      # Keeps track of section nesting
+      # 
+      sectionHandler = 
+        open: (attrs, parser) ->
+          sections.push({ id: attrs['id']})
+        close: (parser) ->
+          sections.pop()
+
+
+      ##
+      # Checks for a[href] attributes that specify ref:[asset:]some-link hrefs
+      # and logs / resolves them respectively
+      # 
+      linkHandler = 
+        open: (attrs, parser) ->
+          href = attrs.href;
+
+          return unless href && href.indexOf(REF_STR) == 0
           
           # remove :ref part
           href = href.substring(REF_STR.length)
@@ -334,19 +403,25 @@ module.exports = (BasePlugin) ->
           if href.charAt(0) == '/'
             href = pathSeparator + href.substring(1)
 
-          log.debug 'replace <', a.attr('href'), '> with <', href, '>'
+          log.debug '  > replace <', attrs.href, '> with <', href, '>'
 
-          a.attr('href', href)
+          attrs.href = href
+
+          patches.push(createPatch(parser, attrs))
 
           # log reference
           registry.addReference(originalHref, url, document) if config.validateLinks && !asset
 
-      resolveImgSrcRefs = ($) ->
-        $('img').each ->
-          img = $(this)
-          src = img.attr('src')
 
-          return if !src || src.indexOf(ASSET_REF_STR) != 0
+      ##
+      # Checks for img[src] that specify ref:asset:asset-path links to images
+      # and resolves them 
+      #
+      imageHandler =
+        open: (attrs, parser) ->
+          src = attrs.src
+
+          return unless src && src.indexOf(ASSET_REF_STR) == 0
 
           # remove :ref:asset part
           originalSrc = src = src.substring(ASSET_REF_STR.length)
@@ -355,67 +430,95 @@ module.exports = (BasePlugin) ->
           if src.charAt(0) == '/'
             src = pathSeparator + src.substring(1)
 
-          log.debug 'replace <', img.attr('src'), '> with <', src, '>'
+          log.debug '  > replace <', attrs.src, '> with <', src, '>'
 
-          img.attr('src', src)
+          attrs.src = src
 
-      parse = (err, domenv) -> 
-        
-        t2 = getTime()
+          patches.push(createPatch(parser, attrs, true))
 
-        log.warn 'error parsing HTML', err if err
+      handlers =
+        h1: headingsHandler,
+        h2: headingsHandler,
+        h3: headingsHandler,
+        h4: headingsHandler,
+        section: sectionHandler,
+        a: linkHandler,
+        img: imageHandler
 
-        complete(err) if err
+      textHandlers = []
 
-        createHeadingRefs(domenv.jquery)
-        resolveLinkRefs(domenv.jquery)
-        resolveImgSrcRefs(domenv.jquery)
+      parser = new htmlparser.Parser(
+        onopentag: (tagname, attrs) ->
+          handler = handlers[tagname]
+          return unless handler && handler.open
 
-        content = docToSource(domenv.document, html)
+          handler.open(attrs, parser, tagname)
+          textHandlers.push(handler) if handler.text
 
-        log.debug 'processed document contents'
-        log.debug content
-        log.debug '\n\n'
+        ontext: (text) -> 
+          (handler.text(text, parser) for handler in textHandlers)
 
-        document.set({
-          contentRendered: content
-        });
-        
-        log.debug content
-        log.debug '\n\n'
+        onclosetag: (tagname) ->
+          handler = handlers[tagname]
+          return unless handler
 
-        t3 = getTime()
-
-        log.performance 'time', (t2 - t1), (t3 - t2), url
-        
-        complete()
-
+          textHandlers.pop() if handler.text
+          handler.close(parser, tagname) if handler.close
+      );
+      
       t1 = getTime()
 
-      if html
-        domenv.document.innerHTML = content
-      else
-        domenv.document.innerHTML = '<html><head></head><body>' + content + '</body></html>'
+      try
+        parser.write(content)
+        parser.end()
+      catch e
+        log.warn '[docpad-plugin-links]', e
+        return complete(e)
 
-      parse(null, domenv)
+      t2 = getTime()
+
+      changes = patches.length
+
+      content = applyPatch(content, patch) while patch = patches.pop()
+
+      if changes
+        log.debug '  > patched document with ', changes, 'changes'
+        log.debug '----'
+        log.debug content
+        log.debug '----'
+        log.debug '\n\n'
+      else
+        log.debug '  > no changes'
+
+      document.set({
+        contentRendered: content
+      })
+
+      t3 = getTime()
+
+      log.performance 'time', (t2 - t1), (t3 - t2), (t3 - t1), url
+      
+      return complete()
 
     # -----------------------------
     # Events
 
     writeBefore: (opts, next) ->
+
       config = @getConfig()
       time = getTime()
 
-      log.info 'Checking documents...'
+      log.info '[docpad-plugin-links] processing documents'
 
       { collection, templateData } = opts
       
       linker = @
 
       tasks = new TaskGroup().setConfig(concurrency: 0).once 'complete', ->
-        log.info 'Done in ', (getTime() - time), 'ms.'
+        log.info '[docpad-plugin-links] completed in ', (getTime() - time), 'ms'
 
         linker.validateLinkRefs(config.validateLinks) if config.validateLinks
+        @running = false
         next()
 
       collection.forEach (d) ->

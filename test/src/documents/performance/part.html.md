@@ -1,6 +1,9 @@
 ---
 
-title: 'large doc part'
+title: 'part of a large document'
+
+include: true
+performanceTest: true
 skip: true
 
 ---

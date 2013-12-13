@@ -1,0 +1,28 @@
+---
+
+title: 'large doc test'
+
+performanceTest: true
+skip: true
+---
+
+
+<% for i in [1..20]: %>
+<section id="section-<%= i %>">
+  <%- @include './part' %>
+</section>
+<% end %>
+
+<% sid = '' %>
+
+<% for i in [1..5]: %>
+  <% sid += ('-' + i) %>
+  <section id='<%= sid %>'>
+
+    <section id="nested-section-<%= i %>">
+      <%- @include './part' %>
+    </section>
+  </section>
+<% end %>
+
+<% sid = '' %>

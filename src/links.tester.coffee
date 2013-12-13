@@ -5,7 +5,7 @@ module.exports = (testers) ->
 
     # tester config
     config:
-      contentRemoveRegex: /(\\r|\\n|\\t|\s\s)+/g
+      contentRemoveRegex: /[\r]+/g
 
     # docpad config
     docpadConfig:
@@ -16,4 +16,23 @@ module.exports = (testers) ->
         'marked': true
       plugins:
         links: 
+          process: { exclude: [ 'include', 'performanceTest' ] }
           logLevel: 'debug'
+
+#  class LinksPluginPerformanceTester extends testers.RendererTester
+#
+#    # tester config
+#    config:
+#      contentRemoveRegex: /[\r]+/g
+#   
+#    # docpad config
+#    docpadConfig:
+#      logLevel: 5
+#      renderPasses: 2
+#      enabledPlugins:
+#        'eco': true
+#        'marked': true
+#      plugins:
+#        links: 
+#          process: { include: [ 'performanceTest' ], exclude: [ 'include' ] }
+#          logLevel: 'info'
