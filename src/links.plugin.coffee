@@ -113,12 +113,25 @@ module.exports = (BasePlugin) ->
     name: 'links'
 
 
-    # ----------------------------
+    ##
     # default configuration
+    #
     config:
-      validateLinks: true # (true|false|'report') check defined and referenced links
-      forceGenerateRefs: true # true if id refs for headings should be re-generated
-      process: 'all' # (false|string) false to process all, a string to process all documents for which the so named meta-data property is present
+
+      # link validation options
+      # false || object
+      validate: 
+        ignorePattern: null # pattern to be ignored when validating dead links
+        failOnError: true # whether to fail with an error if link validation detects a problem
+
+      # link generate options
+      # false || object
+      process:
+        include: null # layouted || [ tags ... ]
+        exclude: null # [ tags ... ]
+        overrideRefs: true # if heading refs should be re-generated
+
+      # logging level with which to output data
       logLevel: 'default'
 
     ##
@@ -135,6 +148,12 @@ module.exports = (BasePlugin) ->
       super
      
       config = @getConfig()
+      process = config.process
+      validate = config.validate
+
+      log.fine '[docpad-plugin-links] init configuration'
+      log.fine '  > process', process
+      log.fine '  > validate', validate
 
       log.debug = console.log if config.logLevel == 'debug'
       log.fine = console.log if config.logLevel == 'performance' || config.logLevel == 'fine' || config.logLevel == 'debug'
@@ -143,8 +162,6 @@ module.exports = (BasePlugin) ->
       if config.logLevel == 'none'
         log.warn = (->)
         log.info = (->)
-
-      processingFilter = config.process
 
       isHtmlFile = (document) -> document.get('outExtension') == 'html' && !!document.get('contentRendered')
 
@@ -165,23 +182,22 @@ module.exports = (BasePlugin) ->
 
           match
 
-      log.fine '[docpad-plugin-links] filter', processingFilter
+      if !process
+        @applyTo = (document) -> false
 
-      if processingFilter == 'all'
+      else if process == 'all' || (!process.include || process.include == 'all')
         @applyTo = (document) -> 
           isHtmlFile(document)
 
-      else if processingFilter == 'layouted'
+      else if process == 'layouted' || process.include == 'layouted'
         @applyTo = (document) -> 
           isHtmlFile(document) && isLayouted(document)
 
-      else if typeof processingFilter == 'object'
-        isFlagged = matchesFlagged(processingFilter)
+      else
+        isFlagged = matchesFlagged(process)
 
         @applyTo = (document) -> 
           isHtmlFile(document) && isFlagged(document)
-      else
-        throw new Error('[docpad-plugin-links] config.process must be any of "all", "layouted", { include: [ ... ], exclude: [ ... ]}')
 
       @clear()
 
@@ -203,7 +219,7 @@ module.exports = (BasePlugin) ->
 
       if @links[fullLink]
         msg = 'Link defined twice: <' + link + '> (' + fullLink + ')'
-        if config.validateLinks != 'report'
+        if config.validate.failOnError
           throw new Error('[docpad-plugin-links] ' + msg)
         else
           log.warn msg
@@ -238,27 +254,36 @@ module.exports = (BasePlugin) ->
       @references.push(reference)
 
 
-    validateLinkRefs: (mode) ->
+    validateLinkRefs: (validateConfig) ->
 
       links = @links
       references = @references
 
-      total = notFound = found = 0
+      ignorePattern = validateConfig.ignorePattern
+
+      @summary = { deadLinks: [] }
+
+      deadLinks = @summary.deadLinks
+
+      total = notFound = found = ignored = 0
 
       log.info '[docpad-plugin-links] validating links'
 
       references.forEach (e) ->
-        if links[e.fullRef]
+        if ignorePattern && ignorePattern.test(e.fullRef)
+          ignored++
+        else if links[e.fullRef]
           found++
         else
           notFound++
-          log.warn '  > dead link in ', e.documentUrl, ':', e.ref, '(', e.fullRef, ')'
+          deadLinks.push({ documentUrl: e.documentUrl, ref: e.ref, fullRef: e.fullRef })
 
         total++
 
-      log.info '-- total:', total, 'found:', found, 'dead:', notFound
-
-      throw new Error('Found dead links (see log).') if notFound && mode != 'report'
+      @summary.total = total
+      @summary.found = found
+      @summary.ignored = ignored
+      @summary.notFound = notFound
 
 
     processDocument: (document, complete) ->
@@ -278,7 +303,7 @@ module.exports = (BasePlugin) ->
       log.fine '[docpad-plugin-links] processing', url
       registry = @
 
-      registry.addLink(url, url, document) if config.validateLinks
+      registry.addLink(url, url, document) if config.validate
 
 
       ##
@@ -344,8 +369,8 @@ module.exports = (BasePlugin) ->
       # 
       headingsHandler = 
         open: (attrs, parser, tagname) ->
-          if attrs.id && !config.forceGenerateRefs
-            registry.addLink('#' + attrs.id, url, document) if config.validateLinks
+          if attrs.id && !config.process.overrideRefs
+            registry.addLink('#' + attrs.id, url, document) if config.validate
           else
             heading = createPatch(parser, attrs)
             heading.text = ''
@@ -359,7 +384,7 @@ module.exports = (BasePlugin) ->
           ref = createHeadingRef(sections, heading.text)
           heading.attrs['id'] = ref
 
-          registry.addLink('#' + ref, url, document) if config.validateLinks
+          registry.addLink('#' + ref, url, document) if config.validate
 
           heading = null
 
@@ -410,7 +435,7 @@ module.exports = (BasePlugin) ->
           patches.push(createPatch(parser, attrs))
 
           # log reference
-          registry.addReference(originalHref, url, document) if config.validateLinks && !asset
+          registry.addReference(originalHref, url, document) if config.validate && !asset
 
 
       ##
@@ -515,10 +540,9 @@ module.exports = (BasePlugin) ->
       linker = @
 
       tasks = new TaskGroup().setConfig(concurrency: 0).once 'complete', ->
-        log.info '[docpad-plugin-links] completed in ', (getTime() - time), 'ms'
+        log.info '[docpad-plugin-links] completed in', (getTime() - time), 'ms'
 
-        linker.validateLinkRefs(config.validateLinks) if config.validateLinks
-        @running = false
+        linker.validateLinkRefs(config.validate) if config.validate
         next()
 
       collection.forEach (d) ->
@@ -532,6 +556,32 @@ module.exports = (BasePlugin) ->
       @
 
     writeAfter: (collection) ->
+
+      validate = @config.validate
+
+      if validate
+        summary = @summary
+        deadLinks = summary.deadLinks
+
+        total = summary.total
+        found = summary.found
+        notFound = summary.notFound
+        ignored = summary.ignored
+        
+        if deadLinks.length
+          log.warn '[docpad-plugin-links] dead links detected!'
+          deadLinks.forEach (link) ->
+            log.warn '  > ', link.documentUrl, ':', link.ref, '(', link.fullRef, ')'
+
+        log.info '[docpad-plugin-links] link validation summary'
+
+        log.info '  > total:', total
+        log.info '  > found:', found
+        log.info '  > ignored:', ignored
+        log.info '  > dead:', notFound
+
+        throw new Error('Found dead links (see log).') if notFound && validate.failOnError
+
       @clear()
 
 

@@ -16,7 +16,10 @@ module.exports = (testers) ->
         'marked': true
       plugins:
         links: 
-          process: { exclude: [ 'include', 'performanceTest' ] }
+          process: 
+            exclude: [ 'include', 'performanceTest' ]
+          validate: 
+            ignorePattern: /.*ignored.*/
           logLevel: 'debug'
 
 #  class LinksPluginPerformanceTester extends testers.RendererTester
