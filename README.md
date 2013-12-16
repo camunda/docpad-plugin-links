@@ -1,35 +1,121 @@
 # Links plugin for DocPad
 
-A plugin for [DocPad](http://docpad.org) that advanced linking features to DocPad. 
+A markup agnostic [DocPad](http://docpad.org) plug-in for smooth linking in large project documentations.
 
 
-## Features
+## Overview
 
-* Generation of in-page heading links based on heading names and nesting in `<section />` elements
-* Expansion of `<a href="ref:/some/link">Link</a>` and `<img src="ref:asset:/assets/img.png" />` to actual link targets
-* Dead link checking for `ref:` links
+The plug-in hooks into DocPad's page generation process and replaces `ref:` prefixes with relative references to the specified file.
+At the same time it stores the references and validates them against existing files in a project.
 
 
-## Install the Plugin
+### Page `/index.html`
+
+```html
+Check out <a href="ref:/b/#my-heading">this section</a> on <a href="ref:/b/">the other page</a>.
+Or try <a href="ref:/broken.html">a broken link</a>.
+```
+
+
+### Page `/b/index.html.md`
+
+```markdown
+## my heading
+This page may **safely** be linked to.
+```
+
+
+### Console Output
+
+```
+~: docpad generate
+
+...
+
+[docpad-plugin-links] processing documents
+[docpad-plugin-links] completed in 11708 ms
+[docpad-plugin-links] validating links
+
+...
+
+[docpad-plugin-links] dead links detected!
+  >  /index.html : /broken.html ( /broken.html )
+[docpad-plugin-links] link validation summary
+  > total: 3
+  > found: 2
+  > ignored: 0
+  > dead: 1
+
+Error: Found dead links (see log)
+  ...
+```
+
+The plugin may optionally fail if invalid document references are used or in-page links are defined twice. 
+
+
+## Use the Plugin
 
 ```
 npm install --save docpad-plugin-links
 ```
 
 
-## Configuration Options
+## Features
 
-The following configuration options are supported by the plugin:
-
-*   __validateLinks__ = `true` - (`true|false|'report'`) check defined and referenced links
-*   __processLayoutedOnly__ = `false` - (`true|false`) process only documents piped through a layout
-*   __processFlaggedOnly__ = `false` - (`false|string`) `false` to process all, a `string` to process all documents for which the so named meta-data property is present
-*   __logLevel__ = `'default'` - (`'default', 'performance', 'debug', 'none'`)
+* Generate in-page heading links based on heading text and `<section />` nesting
+* Expand `ref:/some/link` and `ref:asset:/assets/img.png` in `<a href />` and `<img src />` to actual link targets
+* Collect and report dead links
 
 
 ## Resources
 
 * [Issue Tracker](https://github.com/camunda/docpad-plugin-links/issues)
+
+
+## Configuration
+
+The plugin may be configured via a plugin configuration entry in the `docpad.conf.js` file:
+
+````javascript
+var conf = {
+  ...
+  plugins: {
+    ...
+    links: { /* plugin configuration */ }
+  }
+  ...
+}
+```
+
+The configuration may look like this
+
+```javascript
+{
+  validate: {
+    // whether to fail if errors are detected
+    failOnError: true || false, 
+
+    // a pattern for external files that are to be ignored during link checking
+    ignoreTargetPattern: /.*external.*/ || null,
+    
+    // a pattern for documents to not check for dead links
+    ignoreDocumentPattern: /.*summary\.html/
+  },
+  process: {
+    // which headings to process to generate ids for
+    headings: [ 'h1', 'h2', 'h3' ],
+
+    // which documents (by meta tag) to include during link generation
+    include: [ 'links' ] || 'layouted'
+
+    // which documents (by meta tag) to exclude during link generation
+    exclude: [ 'no-link-check' ]
+  },
+  
+  // which log level to use to display output to the user
+  logLevel: 'default' || 'performance' || 'debug' || 'none'
+}
+```
 
 
 ## Usage Details
