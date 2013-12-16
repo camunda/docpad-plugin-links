@@ -19,7 +19,8 @@ module.exports = (testers) ->
           process: 
             exclude: [ 'include', 'performanceTest' ]
           validate: 
-            ignorePattern: /.*ignored.*/
+            ignoreTargetPattern: /.*ignored.*/
+            ignoreDocumentPattern: /.*no-validate.*/
           logLevel: 'debug'
 
 #  class LinksPluginPerformanceTester extends testers.RendererTester

@@ -127,6 +127,7 @@ module.exports = (BasePlugin) ->
       # link generate options
       # false || object
       process:
+        headings: [ 'h1', 'h2', 'h3', 'h4' ]
         include: null # layouted || [ tags ... ]
         exclude: null # [ tags ... ]
         overrideRefs: true # if heading refs should be re-generated
@@ -205,6 +206,7 @@ module.exports = (BasePlugin) ->
     clear: ->
       @links = {}
       @references = []
+      @summary = { deadLinks: [], overrideLinks: [] }
 
 
     addLink: (link, documentUrl, document) ->
@@ -213,28 +215,31 @@ module.exports = (BasePlugin) ->
       config = @getConfig()
       fullLink = link
 
+      if config.validate.ignoreDocumentPattern && config.validate.ignoreDocumentPattern.test(documentUrl)
+        return
+
       switch link.charAt(0)
         when '?', '#'
           fullLink = documentUrl + link
 
       if @links[fullLink]
-        msg = 'Link defined twice: <' + link + '> (' + fullLink + ')'
-        if config.validate.failOnError
-          throw new Error('[docpad-plugin-links] ' + msg)
-        else
-          log.warn msg
-
-      @links[fullLink] = 
-        link: link
-        fullLink: fullLink
-        documentUrl: documentUrl
-        document: document
+        @summary.overrideLinks.push({ link: link, documentUrl: documentUrl, fullLink: fullLink, document: documentUrl })
+      else
+        @links[fullLink] = 
+          link: link
+          fullLink: fullLink
+          documentUrl: documentUrl
+          document: document
 
 
     addReference: (ref, documentUrl, document) ->
       log.fine '  > add ref', ref
 
       fullRef = ref
+      config = @getConfig()
+
+      if config.validate.ignoreDocumentPattern && config.validate.ignoreDocumentPattern.test(documentUrl)
+        return
 
       switch ref.charAt(0)
         when '#'
@@ -259,9 +264,8 @@ module.exports = (BasePlugin) ->
       links = @links
       references = @references
 
-      ignorePattern = validateConfig.ignorePattern
-
-      @summary = { deadLinks: [] }
+      ignoreDocumentPattern = validateConfig.ignoreDocumentPattern
+      ignoreTargetPattern = validateConfig.ignoreTargetPattern
 
       deadLinks = @summary.deadLinks
 
@@ -270,7 +274,10 @@ module.exports = (BasePlugin) ->
       log.info '[docpad-plugin-links] validating links'
 
       references.forEach (e) ->
-        if ignorePattern && ignorePattern.test(e.fullRef)
+
+        if ignoreTargetPattern && ignoreTargetPattern.test(e.fullRef)
+          ignored++
+        else if ignoreDocumentPattern && ignoreDocumentPattern.test(e.documentUrl)
           ignored++
         else if links[e.fullRef]
           found++
@@ -462,13 +469,12 @@ module.exports = (BasePlugin) ->
           patches.push(createPatch(parser, attrs, true))
 
       handlers =
-        h1: headingsHandler,
-        h2: headingsHandler,
-        h3: headingsHandler,
-        h4: headingsHandler,
         section: sectionHandler,
         a: linkHandler,
         img: imageHandler
+
+      config.process.headings.forEach (heading) ->
+        handlers[heading] = headingsHandler
 
       textHandlers = []
 
@@ -562,12 +568,18 @@ module.exports = (BasePlugin) ->
       if validate
         summary = @summary
         deadLinks = summary.deadLinks
+        overrideLinks = summary.overrideLinks
 
         total = summary.total
         found = summary.found
         notFound = summary.notFound
         ignored = summary.ignored
         
+        if overrideLinks.length
+          log.warn '[docpad-plugin-links] links overrides detected!'
+          overrideLinks.forEach (link) ->
+            log.warn '  > ', link.link, ' (', link.fullLink, ')'
+
         if deadLinks.length
           log.warn '[docpad-plugin-links] dead links detected!'
           deadLinks.forEach (link) ->
@@ -577,10 +589,12 @@ module.exports = (BasePlugin) ->
 
         log.info '  > total:', total
         log.info '  > found:', found
-        log.info '  > ignored:', ignored
+        log.info '  > ignored (by target location):', ignored
         log.info '  > dead:', notFound
 
-        throw new Error('Found dead links (see log).') if notFound && validate.failOnError
+        if validate.failOnError
+          throw new Error('Link overrides detected (see log)') if overrideLinks.length
+          throw new Error('Found dead links (see log)') if notFound
 
       @clear()
 
