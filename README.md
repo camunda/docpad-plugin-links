@@ -76,7 +76,7 @@ npm install --save docpad-plugin-links
 
 The plugin may be configured via a plugin configuration entry in the `docpad.conf.js` file:
 
-````javascript
+```javascript
 var conf = {
   ...
   plugins: {
