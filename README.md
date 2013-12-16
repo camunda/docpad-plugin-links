@@ -1,4 +1,6 @@
-# Links plugin for DocPad
+# Links plugin for DocPad 
+
+<img src="https://travis-ci.org/camunda/docpad-plugin-links.png" data-bindattr-269="269" title="Build Status Images">
 
 A markup agnostic [DocPad](http://docpad.org) plug-in for smooth linking in large project documentations.
 
